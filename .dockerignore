@@ -1,0 +1,12 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+*.sqlite3
+.venv/
+venv/
+django6_env/
+.vscode/
