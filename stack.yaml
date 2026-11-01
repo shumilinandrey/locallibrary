@@ -1,3 +1,8 @@
+configs:
+  prometheus_config:
+    file: ./monitoring/prometheus.yml
+  grafana_datasource:
+    file: ./monitoring/grafana-datasource.yml
 
 services:
   traefik:
@@ -7,6 +12,9 @@ services:
       - "--providers.swarm.exposedbydefault=false"
       - "--providers.swarm.network=library_frontend"
       - "--entrypoints.web.address=:80"
+      - "--entrypoints.metrics.address=:8082"
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.entrypoint=metrics"
     ports:
       - target: 80
         published: 8080
@@ -16,6 +24,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - frontend
+      - monitoring
     deploy:
       replicas: 1
       placement:
@@ -76,17 +85,66 @@ services:
         constraints:
           - node.role == manager
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yml
+    volumes:
+      - prometheus_data:/prometheus
+    networks:
+      - monitoring
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    ports:
+      - target: 3000
+        published: 3000
+        protocol: tcp
+        mode: host
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_password
+    secrets:
+      - grafana_password
+    configs:
+      - source: grafana_datasource
+        target: /etc/grafana/provisioning/datasources/prometheus.yml
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - monitoring
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
 networks:
   frontend:
     driver: overlay
   backend:
     driver: overlay
+  monitoring:
+    driver: overlay
 
 volumes:
   postgres_data:
+  prometheus_data:
+  grafana_data:
 
 secrets:
   django_secret_key:
     external: true
   postgres_password:
+    external: true
+  grafana_password:
     external: true
