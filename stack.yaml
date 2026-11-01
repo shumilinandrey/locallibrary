@@ -1,0 +1,92 @@
+
+services:
+  traefik:
+    image: traefik:v3.6
+    command:
+      - "--providers.swarm=true"
+      - "--providers.swarm.exposedbydefault=false"
+      - "--providers.swarm.network=library_frontend"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - target: 80
+        published: 8080
+        protocol: tcp
+        mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - frontend
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  web:
+    image: ghcr.io/shumilinandrey/locallibrary:latest
+    environment:
+      DJANGO_DEBUG: "False"
+      DJANGO_ALLOWED_HOSTS: "${SITE_HOST}"
+    secrets:
+      - django_secret_key
+      - postgres_password
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        export DJANGO_SECRET_KEY="$$(cat /run/secrets/django_secret_key)"
+        export DATABASE_URL="postgres://library:$$(cat /run/secrets/postgres_password)@db:5432/library"
+        exec gunicorn locallibrary.wsgi:application --bind 0.0.0.0:8000
+    networks:
+      - frontend
+      - backend
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == worker
+      restart_policy:
+        condition: any
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+      labels:
+        - "traefik.enable=true"
+        - "traefik.swarm.network=library_frontend"
+        - "traefik.http.routers.library.rule=Host(`${SITE_HOST}`)"
+        - "traefik.http.routers.library.entrypoints=web"
+        - "traefik.http.services.library.loadbalancer.server.port=8000"
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: library
+      POSTGRES_USER: library
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+networks:
+  frontend:
+    driver: overlay
+  backend:
+    driver: overlay
+
+volumes:
+  postgres_data:
+
+secrets:
+  django_secret_key:
+    external: true
+  postgres_password:
+    external: true
