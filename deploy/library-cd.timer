@@ -1,0 +1,10 @@
+[Unit]
+Description=Automatic LocalLibrary deployment check
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+Unit=library-cd.service
+
+[Install]
+WantedBy=timers.target
