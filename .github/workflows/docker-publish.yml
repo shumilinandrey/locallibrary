@@ -11,7 +11,28 @@ permissions:
   packages: write
 
 jobs:
+  test:
+    name: Test Django
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build test image
+        run: docker build -t locallibrary:test .
+
+      - name: Run Django checks and tests
+        run: |
+          docker run --rm \
+            -e DJANGO_SECRET_KEY=temporary-ci-test-key \
+            -e DATABASE_URL=sqlite:////tmp/ci.sqlite3 \
+            locallibrary:test \
+            sh -c "python manage.py check && python manage.py test catalog"
+
   publish:
+    name: Publish Docker image
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
